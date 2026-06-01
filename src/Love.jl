@@ -905,8 +905,6 @@ module Love
             end
 
             ϵs .+= forcing[x]*ϵ
-            d_disps .+= forcing[x]*d_disp
-            ps .+= forcing[x]*p
         end
 
         Eμ_map = zeros(  (size(ϵ)[1], size(ϵ)[2] ) )
