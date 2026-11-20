@@ -33,6 +33,7 @@ module Love
     export define_spherical_grid
     export get_radial_isotropic_coeffs
     export get_ke_power
+    export get_love_num
 
     # Depending on the stability of the system, different precision can be 
     # chosen here. Low mobility is a challenge, so by default I have set 
@@ -41,50 +42,62 @@ module Love
     # prec = Float64 #BigFloat
     # precc = ComplexF64 #Complex{BigFloat}
 
-    # prec = Double64 #BigFloat
-    # precc = ComplexDF64 #Complex{BigFloat}
+    const prec = Double64 #BigFloat
+    const precc = ComplexDF64 #Complex{BigFloat}
 
-    prec = BigFloat
-    precc = Complex{BigFloat}
+    # prec = BigFloat
+    # precc = Complex{BigFloat}
 
-    G = prec(6.6743e-11)
-    n = 2
-    nr = 100
+    # G = prec(6.6743e-11)
+    # n = 2
+    # nr = 100
 
     porous = false
 
     M = 6 + 2porous         # Matrix size: 6x6 if only solid material, 8x8 for two-phases
 
-    Abot_p = zeros(precc, 8, 8)
-    Amid_p = zeros(precc, 8, 8)
-    Atop_p = zeros(precc, 8, 8)
+    # Abot_p = zeros(precc, 8, 8)
+    # Amid_p = zeros(precc, 8, 8)
+    # Atop_p = zeros(precc, 8, 8)
 
-    k18 = zeros(precc, 8, 8)
-    k28 = zeros(precc, 8, 8)
-    k38 = zeros(precc, 8, 8)
-    k48 = zeros(precc, 8, 8)
+    # k18 = zeros(precc, 8, 8)
+    # k28 = zeros(precc, 8, 8)
+    # k38 = zeros(precc, 8, 8)
+    # k48 = zeros(precc, 8, 8)
 
-    k16 = zeros(precc, 6, 6)
-    k26 = zeros(precc, 6, 6)
-    k36 = zeros(precc, 6, 6)
-    k46 = zeros(precc, 6, 6)
+    # k16 = zeros(precc, 6, 6)
+    # k26 = zeros(precc, 6, 6)
+    # k36 = zeros(precc, 6, 6)
+    # k46 = zeros(precc, 6, 6)
 
-    # I8 = Matrix{Float64}(I, 8, 8)
-    I8 = SMatrix{8,8,precc}(I)
-    I6 = SMatrix{6,6,precc}(I)
+    # # I8 = Matrix{Float64}(I, 8, 8)
+    # I8 = SMatrix{8,8,precc}(I)
+    # I6 = SMatrix{6,6,precc}(I)
 
-    Abot = zeros(precc, 6, 6)
-    Amid = zeros(precc, 6, 6)
-    Atop = zeros(precc, 6, 6)
+    # Abot = zeros(precc, 6, 6)
+    # Amid = zeros(precc, 6, 6)
+    # Atop = zeros(precc, 6, 6)
 
-    clats = 0.0
-    lons = 0.0
-    Y = 0.0
-    dYdθ = 0.0
-    dYdϕ = 0.0
-    Z = 0.0
-    X = 0.0
-    res = 0.0
+    # clats = 0.0
+    # lons = 0.0
+    # Y = 0.0
+    # dYdθ = 0.0
+    # dYdϕ = 0.0
+    # Z = 0.0
+    # X = 0.0
+    # res = 0.0
+
+    G::prec = prec(6.6743e-11)
+    n::Int  = 2
+    nr::Int = 100
+    res::Float64 = 1.0
+    clats::Vector{Float64}                  = Float64[]
+    lons::Adjoint{Float64,Vector{Float64}}  = adjoint(Float64[])
+    Y::Array{ComplexF64,3}    = zeros(ComplexF64,0,0,0)
+    dYdθ::Array{ComplexF64,3} = zeros(ComplexF64,0,0,0)
+    dYdϕ::Array{ComplexF64,3} = zeros(ComplexF64,0,0,0)
+    Z::Array{ComplexF64,3}    = zeros(ComplexF64,0,0,0)
+    X::Array{ComplexF64,3}    = zeros(ComplexF64,0,0,0)
 
     """
         set_G(new_G)
@@ -107,19 +120,35 @@ module Love
     `r` must be be a 2D array, with index 1 representing the top radius of secondary layers, and index 2
     representing the top radius of primary layers. 
     """
-    function get_g(r, ρ)
-        g = zeros(Float64, size(r))
-        M = zeros(Float64, size(r))
+    # function get_g(r, ρ)
+    #     g = zeros(Float64, size(r))
+    #     M = zeros(Float64, size(r))
 
-        for i in 1:size(r)[2]
-            M[2:end,i] = 4.0/3.0 * π .* diff(r[:,i].^3) .* ρ[i]
-        end
+    #     for i in 1:size(r)[2]
+    #         M[2:end,i] = 4.0/3.0 * π .* diff(r[:,i].^3) .* ρ[i]
+    #     end
     
-        g[2:end,:] .= G*accumulate(+,M[2:end,:]) ./ r[2:end,:].^2
-        g[1,2:end] = g[end,1:end-1]
+    #     g[2:end,:] .= G*accumulate(+,M[2:end,:]) ./ r[2:end,:].^2
+    #     g[1,2:end] = g[end,1:end-1]
 
-        return g
+    #     return g
+    # end
+
+    function get_g(r, ρ)
+    # rp = convert(Array{prec}, r)
+    # ρp = convert(Array{prec}, ρ)
+    nsub, nlay = size(r)
+    g = zeros(Float64, nsub, nlay)
+    Menc = zero(Float64)
+    for i in 1:nlay
+        g[1,i] = i == 1 ? 0.0 : g[end,i-1]
+        for j in 2:nsub
+            Menc += 4/3.0 * π * (r[j,i]^3 - r[j-1,i]^3) * ρ[i]
+            g[j,i] = G * Menc / r[j,i]^2
+        end
     end
+    return g
+end
 
     """
         get_A(r, ρ, g, μ, K)
@@ -128,10 +157,14 @@ module Love
 
     See also [`get_A!`](@ref)
     """
-    function get_A(r, ρ, g, μ, K)
-        A = zeros(precc, 6, 6) 
-        get_A!(A, r, ρ, g, μ, K)
-        return A
+    function get_A(r, ρ, g, μ, K; sg=true)
+        # A = zeros(precc, 6, 6) 
+        # get_A!(A, r, ρ, g, μ, K)
+        # return A
+    
+        A = zeros(MMatrix{6,6,precc})
+        get_A!(A, r, ρ, g, μ, K; sg=sg)
+        return SMatrix(A)
     end
 
     """
@@ -143,7 +176,7 @@ module Love
 
     See also [`get_A`](@ref)
     """
-    function get_A!(A::Matrix, r, ρ, g, μ, K; λ=nothing)
+    function get_A!(A::AbstractMatrix, r, ρ, g, μ, K; λ=nothing, sg=true)
         if isnothing(λ)
             λ = K - 2μ/3
         end
@@ -156,14 +189,14 @@ module Love
         A[2,1] = -r_inv
         A[3,1] = 4r_inv * (3K*μ*r_inv*β_inv - ρ*g)       #- ω^2 * ρ# 
         A[4,1] = -r_inv * (6K*μ*r_inv*β_inv - ρ*g )
-        A[5,1] = 4π * G * ρ
-        A[6,1] = 4π*(n+1)*G*ρ*r_inv
+        A[5,1] = sg * 4π * G * ρ                    # self-gravity
+        A[6,1] = sg * 4π*(n+1)*G*ρ*r_inv            # self-gravity
 
         A[1,2] = n*(n+1) * λ * r_inv*β_inv
         A[2,2] = r_inv
         A[3,2] = -n*(n+1)*r_inv * (6K*μ*r_inv*β_inv - ρ*g ) 
         A[4,2] = 2μ*r_inv^2 * (n*(n+1)*(1 + λ*β_inv) - 1.0 ) #- ω^2 * ρ# 
-        A[6,2] = -4π*n*(n+1)*G*ρ*r_inv
+        A[6,2] = sg * -4π*n*(n+1)*G*ρ*r_inv         # self-gravity
 
         A[1,3] = β_inv
         A[3,3] = r_inv*β_inv * (-4μ )
@@ -301,23 +334,21 @@ module Love
 
     See also [`get_B`](@ref)
     """
-    function get_B!(B, r1, r2, g1, g2, ρ, μ, K)
-        dr = r2 - r1
-        rhalf = r1 + 0.5dr
+    function get_B!(B, r1, r2, g1, g2, ρ, μ, K; sg=true)
+        dr = r2 - r1;  
+        rh = r1 + dr/2;  
+        gh = (g1 + g2)/2
         
-        ghalf = g1 + 0.5*(g2 - g1)
-
-        A1 = get_A(r1, ρ, g1, μ, K)
-        Ahalf = get_A(rhalf, ρ, ghalf, μ, K)
-        A2 = get_A(r2, ρ, g2, μ, K)
+        A1 = get_A(r1, ρ, g1, μ, K; sg=sg); 
+        Ah = get_A(rh, ρ, gh, μ, K; sg=sg); 
+        A2 = get_A(r2, ρ, g2, μ, K; sg=sg)
         
-        k16 .= dr * A1 
-        k26 .= dr * Ahalf * (I + 0.5k16)
-        k36 .= dr * Ahalf * (I + 0.5k26)
-        k46 .= dr * A2 * (I + k36) 
-
-        # Only compute over the first six indices
-        B[1:6,1:6] .= (I + 1.0/6.0 * (k16 + 2k26 + 2k36 + k46))
+        k1 = dr*A1
+        k2 = dr*Ah*(I + k1/2)
+        k3 = dr*Ah*(I + k2/2)
+        k4 = dr*A2*(I + k3)
+        
+        B .= I + (k1 + 2k2 + 2k3 + k4)/6
     end
 
     """
@@ -374,13 +405,13 @@ module Love
 
     Bprod is denoted by D in Eq. S5.14 in Hay et al., (2025).
     """
-    function get_B_product!(Bprod2, r, ρ, g, μ, K)
-        Bstart = zeros(precc, 6, 6)
+    function get_B_product!(Bprod2, r, ρ, g, μ, K; sg=true)
+        # Bstart = zeros(precc, 6, 6)
         B = zeros(precc, 6, 6)
 
-        for i in 1:6
-            Bstart[i,i,1] = 1.0
-        end
+        # for i in 1:6
+        #     Bstart[i,i,1] = 1.0
+        # end
 
         nr = size(r)[1]
 
@@ -390,8 +421,14 @@ module Love
             g1 = g[j]
             g2 = g[j+1]
 
-            get_B!(B, r1, r2, g1, g2, ρ, μ, K)
-            Bprod2[:,:,j] .= B * (j==1 ? Bstart : Bprod2[:,:,j-1])
+            get_B!(B, r1, r2, g1, g2, ρ, μ, K; sg=sg)
+
+            # Bprod2[:,:,j] .= B * (j==1 ? Bstart : Bprod2[:,:,j-1])
+            if j == 1
+                @views Bprod2[:,:,1] .= B                              # B*I == B
+            else
+                @views mul!(Bprod2[:,:,j], B, Bprod2[:,:,j-1])
+            end
 
             r1 = r2
         end
@@ -729,26 +766,54 @@ module Love
 
         y1 = compute_y(rr, ρ, g, μ, κs);
     """
-    function compute_y(r, ρ, g, μ, K; core="liquid")
+    function compute_y(r, ρ, g, μ, K; core="liquid", self_grav = true, forcing="tides", pressure_boundary=:none)
         r, ρ, g, μ, K = convert_params_to_prec(r, ρ, g, μ, K)
 
         nlayers = size(r)[2]
         nsublayers = size(r)[1]
 
-        y_start = get_Ic(r[end,1], ρ[1], g[end,1], μ[1], core; M=6, N=3)
+        y_start = get_Ic(r[end,1], ρ[1], g[end,1], μ[1], core; M=6, N=3, sg=self_grav)
+        q_start = zeros(precc, 6)
 
         y1_4 = zeros(precc, 6, 3, nsublayers-1, nlayers) # Three linearly independent y solutions
         y = zeros(ComplexF64, 6, nsublayers-1, nlayers)
+        q = zeros(precc, 6, nsublayers-1, nlayers)
         
-        for i in 2:nlayers
-            Bprod = zeros(precc, 6, 6, nsublayers-1)
-            @views get_B_product!(Bprod, r[:, i], ρ[i], g[:, i], μ[i], K[i])
+        # for i in 2:nlayers
+        #     Bprod = zeros(precc, 6, 6, nsublayers-1)
+        #     @views get_B_product!(Bprod, r[:, i], ρ[i], g[:, i], μ[i], K[i])
 
-            for j in 1:nsublayers-1
-                y1_4[:,:,j,i] = @view(Bprod[:,:,j]) * y_start 
+        #     for j in 1:nsublayers-1
+        #         y1_4[:,:,j,i] = @view(Bprod[:,:,j]) * y_start 
+        #     end
+
+        #     y_start[:,:] .= @view(y1_4[:,:,end,i])   # Set starting vector for next layer
+        # end
+
+        Bprod = zeros(precc, 6, 6, nsublayers-1)             
+
+        for i in 2:nlayers
+            @views get_B_product!(Bprod, r[:, i], ρ[i], g[:, i], μ[i], K[i]; sg=self_grav)
+
+            is_ocean = real(μ[i]) < 1e6
+
+            # Pressure jump at ocean bottom
+            if forcing == "pressure" && is_ocean && pressure_boundary == :bottom
+                q_start[3] += ρ[i]
             end
 
-            y_start[:,:] .= @view(y1_4[:,:,end,i])   # Set starting vector for next layer
+            for j in 1:nsublayers-1
+                forcing == "pressure" && @views mul!(q[:,j,i], Bprod[:,:,j], q_start)
+                @views mul!(y1_4[:,:,j,i], Bprod[:,:,j], y_start)
+            end
+
+            # Pressure jump at ocean top
+            if forcing == "pressure" && is_ocean && pressure_boundary == :top
+                q[3,end,i] -= ρ[i] 
+            end
+
+            y_start[:,:] .= @view(y1_4[:,:,end,i])
+            q_start[:] .= @view(q[:,end,i])
         end
 
         M = zeros(precc, 3,3)
@@ -758,20 +823,36 @@ module Love
         M[3, :] .= y1_4[6,:,end,end]  # Row 3 - Potential Stress
          
         b = zeros(precc, 3)
-        b[3] = (2n+1)/r[end,end] 
+
+        if forcing=="tides"
+            b[3] = (2n+1)/r[end,end] 
+        end
+
+        # RHS = copy(b)
+
+        if forcing=="pressure"
+            b[1] -= q[3,end,end]
+            b[2] -= q[4,end,end]
+            b[3] -= q[6,end,end]
+        end
+
         C = M \ b
 
         for i in 2:nlayers
             for j in 1:nsublayers-1
-                y[:,j,i] = @view(y1_4[:,:,j,i])*C
+                @views y[:,j,i] = y1_4[:,:,j,i]*C 
             end
+        end
+
+        if forcing=="pressure"
+            y .+= q
         end
 
         return y
     end
 
     "Get the core solution vector"
-    function get_Ic(r, ρ, g, μ, type; M=6, N=3)
+    function get_Ic(r, ρ, g, μ, type; M=6, N=3, sg=true)
         Ic = zeros(precc, M, N)
 
         if type=="liquid"
@@ -781,7 +862,7 @@ module Love
             Ic[3,3] = g*ρ
             Ic[5,1] = r^n
             Ic[6,1] = 2(n-1)*r^(n-1)
-            Ic[6,3] = 4π * G * ρ 
+            Ic[6,3] = sg * 4π * G * ρ 
         else # incompressible solid core
             # First column
             Ic[1, 1] = n*r^( n+1 ) / ( 2*( 2n + 3) )
@@ -1635,5 +1716,25 @@ module Love
         end
 
         return i
+    end
+
+    function get_love_num(y, r, g; n=2, pressure=false)
+        gR = g[end,end]
+        R  = r[end,end]
+
+        if !pressure
+            k2R = y[5, end,end] - 1.0    # Get k2 Love number at surface
+            k2t = y[5, end,end-1] - (r[end,end-1]/R)^n    # Get k2 Love number at surface
+            k2b = y[5, end,end-2] - (r[end,end-2]/R)^n    # Get k2 Love number at surface
+            h2R = y[1, end, end] * gR
+            h2t = y[1, end, end-1] * gR
+            h2b = y[1, end, end-2] * gR
+
+            return (k2R, k2t, k2b), (h2R, h2t, h2b)
+        else
+
+
+        end
+
     end
 end
